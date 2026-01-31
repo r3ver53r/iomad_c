@@ -3090,8 +3090,17 @@ class company {
             $childtotal = 0;
         }
 
+        // Get the license to check its type.
+        $license = $DB->get_record('companylicense', array('id' => $licenseid));
+
         // Get the number of user assigned licenses for this license.
-        if ($userusage = $DB->get_records_sql("SELECT count(id) AS total
+        // CUSTOM: For blanket licenses (type 4), count unique users only.
+        if ($license && $license->type == 4) {
+            $usertotal = $DB->count_records_sql(
+                "SELECT COUNT(DISTINCT userid) FROM {companylicense_users} WHERE licenseid = :licenseid",
+                ['licenseid' => $licenseid]
+            );
+        } else if ($userusage = $DB->get_records_sql("SELECT count(id) AS total
                                                FROM {companylicense_users}
                                                WHERE licenseid = :licenseid",
                                                array('licenseid' => $licenseid))) {
@@ -3103,7 +3112,7 @@ class company {
         }
 
         // If we have a license, update it.
-        if ($license = $DB->get_record('companylicense', array('id' => $licenseid))) {
+        if ($license) {
             $license->used = $childtotal + $usertotal;
             $DB->update_record('companylicense', $license);
         }

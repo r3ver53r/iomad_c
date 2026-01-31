@@ -271,7 +271,9 @@ class helper {
 
             // Process any found licenses.
             foreach ($blanketlicenses as $blanketlicense) {
-                // Get the courses for this license.
+                // CUSTOM: Blanket license course query. The companyid check is in the ON clause
+                // (not WHERE) to preserve LEFT JOIN behavior - courses without company_course_options
+                // entries should still appear (with NULL mandatory field).
                 $licensecourses = $DB->get_records_sql("SELECT c.id,
                                                         c.id AS courseid,
                                                         c.fullname AS coursefullname,
@@ -281,11 +283,10 @@ class helper {
                                                         JOIN {companylicense_courses} clc on (c.id = clc.courseid)
                                                         LEFT JOIN {company_course_options} cca ON (
                                                             c.id = cca.courseid
-                                                            AND clc.courseid = cca.courseid)
+                                                            AND cca.companyid = :companyid)
                                                         WHERE clc.licenseid = :licenseid
                                                         $inprogresssql
-                                                        $mandatorysql
-                                                        AND cca.companyid = :companyid",
+                                                        $mandatorysql",
                                                        ['licenseid' => $blanketlicense->id,
                                                         'companyid' => $companyid]);
 

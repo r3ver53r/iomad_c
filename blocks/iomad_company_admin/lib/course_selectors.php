@@ -1212,6 +1212,7 @@ class potential_user_license_course_selector extends company_course_selector_bas
         $params['timestamp'] = time();
         $params['userid'] = $this->user->id;
         $params['licenseid'] = $this->licenseid;
+        $params['existsuserid'] = $this->user->id;
 
         $fields      = 'SELECT ' . $this->required_fields_sql('c');
         $countfields = 'SELECT COUNT(1)';
@@ -1219,6 +1220,8 @@ class potential_user_license_course_selector extends company_course_selector_bas
         $distinctfields      = 'SELECT DISTINCT ' . $this->required_fields_sql('c');
         $distinctcountfields = 'SELECT COUNT(DISTINCT c.id) ';
 
+        // CUSTOM: Blanket license capacity check - allow course selection if license
+        // has capacity OR user is already allocated (existing users don't consume new slots).
         $sql = " FROM {course} c,
                         {companylicense} cl,
                         {companylicense_courses} clc
@@ -1227,7 +1230,9 @@ class potential_user_license_course_selector extends company_course_selector_bas
                         AND $wherecondition
                         AND cl.companyid = :companyid
                         AND cl.id = :licenseid
-                        AND cl.used < cl.allocation
+                        AND (cl.used < cl.allocation
+                             OR EXISTS (SELECT 1 FROM {companylicense_users} clu2
+                                        WHERE clu2.licenseid = cl.id AND clu2.userid = :existsuserid))
                         AND cl.expirydate >= :timestamp
                         AND c.id NOT IN
                         ( SELECT clu.licensecourseid FROM {companylicense_users} clu

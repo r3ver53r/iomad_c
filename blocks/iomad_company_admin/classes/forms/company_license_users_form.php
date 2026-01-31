@@ -311,7 +311,19 @@ class company_license_users_form extends \moodleform {
                 $licenserecord = (array) $this->license;
 
                 if (!empty($userstoassign) && !empty($courses)) {
-                    $required = count($userstoassign) * count($courses);
+                    // CUSTOM: For blanket licenses (type 4), count unique new users only.
+                    if ($this->license->type == 4) {
+                        $newusers = 0;
+                        foreach ($userstoassign as $user) {
+                            if (!$DB->record_exists('companylicense_users',
+                                    ['licenseid' => $this->licenseid, 'userid' => $user->id])) {
+                                $newusers++;
+                            }
+                        }
+                        $required = $newusers;
+                    } else {
+                        $required = count($userstoassign) * count($courses);
+                    }
                     if ($count + $required > $numberoflicenses) {
                         redirect(new moodle_url("/blocks/iomad_company_admin/company_license_users_form.php",
                                                  array('licenseid' => $this->licenseid, 'error' => 1)));

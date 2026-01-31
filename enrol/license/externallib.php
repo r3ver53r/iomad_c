@@ -232,19 +232,24 @@ class enrol_license_external extends external_api {
                     // Set the companyid.
                     $companyid = iomad::get_my_companyid(context_system::instance(), false);
 
+                    // CUSTOM: Blanket license fallback for API enrollment.
+                    // Check if user has access via blanket license covering this course.
                     $blanketsql = "SELECT cl.* FROM {companylicense} cl
                                    JOIN {companylicense_courses} clc ON (cl.id = clc.licenseid)
                                    WHERE clc.courseid = :courseid
-                                   AND cl.companyid =:companyid
+                                   AND cl.companyid = :companyid
                                    AND cl.startdate < :startdate
                                    AND cl.expirydate > :expirydate
                                    AND cl.type = 4
-                                   AND cl.used < cl.allocation";
+                                   AND (cl.used < cl.allocation
+                                        OR EXISTS (SELECT 1 FROM {companylicense_users} clu
+                                                   WHERE clu.licenseid = cl.id AND clu.userid = :userid))";
                     $license = $DB->get_record_sql($blanketsql, [
                                                                 'courseid' => $instance->courseid,
                                                                 'companyid' => $companyid,
                                                                 'startdate' => time(),
                                                                 'expirydate' => time(),
+                                                                'userid' => $USER->id,
                                                             ]);
                 }
 

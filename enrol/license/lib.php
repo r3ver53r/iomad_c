@@ -226,13 +226,17 @@ class enrol_license_plugin extends enrol_plugin {
         }
 
         // Set the enrolment end time.
+        // CUSTOM: Fix timeend calculation when validlength=0 (falls back to expirydate).
         if ($license->type == 0 || $license->type == 2 || $license->type == 4) {
-            if (empty($license->cutoffdate)) {
+            if (!empty($license->cutoffdate)) {
+                // Set the timeend to be the cutoff date.
+                $timeend = $license->cutoffdate;
+            } else if (!empty($license->validlength)) {
                 // Set the timeend to be time start + the valid length for the license in days.
                 $timeend = $timestart + ($license->validlength * 24 * 60 * 60 );
             } else {
-                // Set the timeend to be the cutt off date.
-                $timeend = $license->cutoffdate;
+                // Fall back to license expiry date when no validlength or cutoffdate set.
+                $timeend = $license->expirydate;
             }
         } else {
             // Set the timeend to be when the license runs out.
@@ -370,19 +374,25 @@ class enrol_license_plugin extends enrol_plugin {
                 AND clu.isusing = 0
                 AND clu.licensecourseid = :courseid";
         if (!$license = $DB->get_record_sql($sql, ['userid' => $USER->id, 'courseid' => $instance->courseid])) {
+            // CUSTOM: Fallback for blanket licenses - check if user has access via
+            // a blanket license that covers this course, even without explicit allocation.
+            // Allows enrollment if license has capacity OR user is already allocated.
             $blanketsql = "SELECT * FROM {companylicense} cl
                            JOIN {companylicense_courses} clc ON (cl.id = clc.licenseid)
                            WHERE clc.courseid = :courseid
-                           AND cl.companyid =:companyid
+                           AND cl.companyid = :companyid
                            AND cl.startdate < :startdate
                            AND cl.expirydate > :expirydate
                            AND cl.type = 4
-                           AND cl.used < cl.allocation";
+                           AND (cl.used < cl.allocation
+                                OR EXISTS (SELECT 1 FROM {companylicense_users} clu
+                                           WHERE clu.licenseid = cl.id AND clu.userid = :userid))";
             if (!$license = $DB->get_record_sql($blanketsql, [
                                                                 'courseid' => $instance->courseid,
                                                                 'companyid' => $companyid,
                                                                 'startdate' => time(),
                                                                 'expirydate' => time(),
+                                                                'userid' => $USER->id,
                                                              ])) {
                 return get_string('nolicenseinformationfound', 'enrol_license');
             }
@@ -435,19 +445,23 @@ class enrol_license_plugin extends enrol_plugin {
                 // Set the companyid.
                 $companyid = iomad::get_my_companyid(context_system::instance(), false);
 
+                // CUSTOM: Blanket license fallback - same query as can_license_enrol().
                 $blanketsql = "SELECT cl.* FROM {companylicense} cl
                                JOIN {companylicense_courses} clc ON (cl.id = clc.licenseid)
                                WHERE clc.courseid = :courseid
-                               AND cl.companyid =:companyid
+                               AND cl.companyid = :companyid
                                AND cl.startdate < :startdate
                                AND cl.expirydate > :expirydate
                                AND cl.type = 4
-                               AND cl.used < cl.allocation";
+                               AND (cl.used < cl.allocation
+                                    OR EXISTS (SELECT 1 FROM {companylicense_users} clu
+                                               WHERE clu.licenseid = cl.id AND clu.userid = :userid))";
                 $license = $DB->get_record_sql($blanketsql, [
                                                                 'courseid' => $instance->courseid,
                                                                 'companyid' => $companyid,
                                                                 'startdate' => time(),
                                                                 'expirydate' => time(),
+                                                                'userid' => $USER->id,
                                                             ]);
             }
 
@@ -456,7 +470,7 @@ class enrol_license_plugin extends enrol_plugin {
 
             if ($instance->id == $instanceid || $license->type == 1 || $license->type == 3) {
                 if ($data = $form->get_data() || $license->type == 1 || $license->type == 3) {
-                    // If we are a blnket license we need to allocate the license at this time.
+                    // If we are a blanket license we need to allocate the license at this time.
                     if ($license->type == 4) {
                         $issuedate = time();
                         $userlicense = (object) [
@@ -503,6 +517,8 @@ class enrol_license_plugin extends enrol_plugin {
         } else {
             // This user can not license enrol using this instance. Using an empty form to keep
             // the UI consistent with other enrolment plugins that returns a form.
+            // CUSTOM: Fix uninitialized $data when user cannot enroll.
+            $data = new stdClass();
             $data->header = $this->get_instance_name($instance);
             $data->info = $enrolstatus;
 
