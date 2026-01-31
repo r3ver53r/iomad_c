@@ -166,6 +166,9 @@ class company_license_table extends table_sql {
         // Deal with allocation numbers if a program.
         if (!empty($row->program)) {
             return $row->used / count($licensecourses);
+        } else if ($row->type == 4) {
+            // CUSTOM: Blanket licenses count unique users.
+            return $row->used . ' ' . get_string('users');
         } else {
             return $row->used;
         }
