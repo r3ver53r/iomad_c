@@ -405,3 +405,81 @@ If submitting to upstream IOMAD:
 2. Existing installations may have blanket licenses with different expectations
 3. Migration script may be needed to recalculate `used` field for existing blanket licenses
 4. Consider making this a new license type rather than default behavior
+
+---
+
+## Upstream Bug Fixes
+
+The following bugs exist in **upstream IOMAD** (not caused by our customizations), but are exposed more frequently by custom blanket self-enrollment. These fixes have been applied locally.
+
+### Bug Fix 1: Uninitialized $data Variable (Crash)
+
+**File:** `enrol/license/lib.php` line ~516
+
+**Symptom:**
+```
+Exception - Attempt to assign property "header" on null
+Stack trace: line 516 of /enrol/license/lib.php
+```
+
+**Cause:** When a user visits the enrollment page but cannot enroll (e.g., no valid license), the `$data` variable was never initialized before being used.
+
+**Fix:**
+```php
+// BEFORE
+} else {
+    $data->header = $this->get_instance_name($instance);
+
+// AFTER
+} else {
+    // CUSTOM: Fix uninitialized $data when user cannot enroll.
+    $data = new stdClass();
+    $data->header = $this->get_instance_name($instance);
+```
+
+---
+
+### Bug Fix 2: Enrollment Expires Immediately (validlength=0)
+
+**File:** `enrol/license/lib.php` lines ~229-236
+
+**Symptom:** User enrollment has `timeend = timestart` (expires immediately) when license has `validlength=0` and `cutoffdate=0`.
+
+**Evidence from debugging:**
+```
+Course 2: timeend = 1801353600 (works - uses expirydate)
+Course 3: timeend = 1769875627 = timestart (expired immediately)
+License:  validlength=0, cutoffdate=0, expirydate=1801353600
+```
+
+**Cause:** The original logic checked if `cutoffdate` was empty first, then calculated `timeend` from `validlength`. When `validlength=0`, this resulted in `timeend = timestart + 0` (expires immediately).
+
+**Fix:**
+```php
+// BEFORE
+if ($license->type == 0 || $license->type == 2 || $license->type == 4) {
+    if (empty($license->cutoffdate)) {
+        $timeend = $timestart + ($license->validlength * 24 * 60 * 60);
+    } else {
+        $timeend = $license->cutoffdate;
+    }
+}
+
+// AFTER
+// CUSTOM: Fix timeend calculation when validlength=0 (falls back to expirydate).
+if ($license->type == 0 || $license->type == 2 || $license->type == 4) {
+    if (!empty($license->cutoffdate)) {
+        $timeend = $license->cutoffdate;
+    } else if (!empty($license->validlength)) {
+        $timeend = $timestart + ($license->validlength * 24 * 60 * 60);
+    } else {
+        // Fall back to license expiry date when no validlength or cutoffdate set.
+        $timeend = $license->expirydate;
+    }
+}
+```
+
+**Priority order:**
+1. `cutoffdate` if set (hard deadline)
+2. `validlength` if set (relative duration from enrollment)
+3. `expirydate` as fallback (license expiration)

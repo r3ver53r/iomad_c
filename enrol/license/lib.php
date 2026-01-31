@@ -226,13 +226,17 @@ class enrol_license_plugin extends enrol_plugin {
         }
 
         // Set the enrolment end time.
+        // CUSTOM: Fix timeend calculation when validlength=0 (falls back to expirydate).
         if ($license->type == 0 || $license->type == 2 || $license->type == 4) {
-            if (empty($license->cutoffdate)) {
+            if (!empty($license->cutoffdate)) {
+                // Set the timeend to be the cutoff date.
+                $timeend = $license->cutoffdate;
+            } else if (!empty($license->validlength)) {
                 // Set the timeend to be time start + the valid length for the license in days.
                 $timeend = $timestart + ($license->validlength * 24 * 60 * 60 );
             } else {
-                // Set the timeend to be the cutt off date.
-                $timeend = $license->cutoffdate;
+                // Fall back to license expiry date when no validlength or cutoffdate set.
+                $timeend = $license->expirydate;
             }
         } else {
             // Set the timeend to be when the license runs out.
@@ -513,6 +517,8 @@ class enrol_license_plugin extends enrol_plugin {
         } else {
             // This user can not license enrol using this instance. Using an empty form to keep
             // the UI consistent with other enrolment plugins that returns a form.
+            // CUSTOM: Fix uninitialized $data when user cannot enroll.
+            $data = new stdClass();
             $data->header = $this->get_instance_name($instance);
             $data->info = $enrolstatus;
 
