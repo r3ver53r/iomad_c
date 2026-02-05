@@ -25,13 +25,10 @@ namespace block_iomad_company_admin\forms;
 
 defined('MOODLE_INTERNAL') || die;
 
-use iomad;
-use company;
 use moodle_url;
-use context_system;
-use auth_iomadoidc\utils;
 use core_text;
 use moodleform;
+use iomad;
 use html_writer;
 
 class company_iomadoidc_mappings_form extends moodleform {
@@ -54,10 +51,9 @@ class company_iomadoidc_mappings_form extends moodleform {
         // get all of the profile field categories.
         $profilecategories = iomad::iomad_filter_profile_categories($DB->get_records('user_info_category'));
         $customfields = [];
-        if (!empty($profilecategories)) {
-            $customfields = $DB->get_records_sql_menu("SELECT id,concat('profile_field_',shortname)
-                                                  FROM {user_info_field}
-                                                  WHERE categoryid IN (" . implode(',', array_keys($profilecategories)) . ")");
+	if (!empty($profilecategories)) {
+            $insql = $DB->get_in_or_equal($profilecategories);
+            $customfields = $DB->get_records_select_menu('user_info_field', 'categoryid', $insql, '', "id,concat('profile_field_',shortname)");
             $customfields = array_values($customfields);
         }
 
@@ -73,6 +69,14 @@ class company_iomadoidc_mappings_form extends moodleform {
         );
         $mform->addElement('html', get_string('cfg_field_mapping_desc', 'auth_iomadoidc'));
         $mform->addElement('html', html_writer::tag('p', get_string('managermapping', 'local_iomad_oidc_sync')));
+
+        // Add in custom data for MS Graph search.
+        $mform->addElement('text',
+                           "graphproperties{$postfix}",
+                           get_string('graphproperties', 'local_iomad_oidc_sync'),
+                           ['size' => 75]);
+        $mform->addHelpButton("graphproperties{$postfix}", 'graphproperties', 'local_iomad_oidc_sync');
+        $mform->setType("graphproperties{$postfix}", PARAM_TEXT);
 
         // Generate the list of options.
         $lockoptions = [
@@ -177,9 +181,47 @@ class company_iomadoidc_mappings_form extends moodleform {
             }
         }
 
+        // Show reset?
+        $mform->addElement(
+            'selectyesno',
+            'allowreset',
+            get_string('allowformreset', 'block_iomad_company_admin'),
+        );
+
         // Disable the onchange popup.
         $mform->disable_form_change_checker();
 
-        $this->add_action_buttons();
+        $actionbuttons = [];
+        $actionbuttons[] = $mform->createElement('submit', 'submitbutton', get_string('savechanges'));
+        $actionbuttons[] = $mform->createElement('cancel');
+        $actionbuttons[] = $mform->createElement(
+            'submit',
+            'resetbutton',
+            get_string('resetdefault', 'block_iomad_company_admin'),
+            [
+                'class' => 'dangerbutton',
+            ]);
+        $mform->addGroup($actionbuttons, 'buttonar', '', ' ', false);
+
+        $mform->hideIF('resetbutton', 'allowreset', 'eq', 0);
+    }
+
+    /**
+     * Form validation.
+     *
+     * @param array $data
+     * @param array $files
+     * @return array
+     */
+    public function validation($data, $files) {
+        global $postfix;
+
+        $errors = parent::validation($data, $files);
+        if (!empty($data["graphproperties{$postfix}"])) {
+            if (str_contains($data["graphproperties{$postfix}"], " ")) {
+                $errors["graphproperties{$postfix}"] = get_string('invalidentry', 'error');
+            }
+        }
+        return $errors;
     }
 }

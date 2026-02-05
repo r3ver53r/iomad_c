@@ -114,7 +114,11 @@ class dashboard_page_viewed extends base {
             $context = \core\context\company::instance($companyid);
         } else {
             $context = context_system::instance();
-            $companyid = -1;
+        }
+
+        // Companyid cannot be empty.
+        if (is_null($companyid)) {
+            $companyid = 0;
         }
 
         // Set the payload.
